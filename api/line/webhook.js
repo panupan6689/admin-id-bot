@@ -2066,14 +2066,14 @@ async function handleEvent(event) {
       } else if (command.action === "resolveReviewQueue") {
         responseText = result.message || (result.resolved ? "อัปเดตคิวแล้ว" : "ไม่สามารถดำเนินการได้");
         if (result.resolved && result.decision === "ผ่าน" && result.sourceWritten) {
-          responseText += "\nหากกดผิด กด “ย้อนรายการ” หรือพิมพ์ ย้อนคิว " + result.rowNo;
+          responseText += "\nหากกดผิด กด “ยกเลิก / ทำรายการใหม่” หรือพิมพ์ ยกเลิกรายการ " + result.rowNo;
           responseQuickReply = {
             items: [{
               type: "action",
               action: {
                 type: "message",
-                label: "ย้อนรายการ",
-                text: "ย้อนคิว " + result.rowNo
+                label: "ยกเลิก / ทำรายการใหม่",
+                text: "ยกเลิกรายการ " + result.rowNo
               }
             }]
           };
