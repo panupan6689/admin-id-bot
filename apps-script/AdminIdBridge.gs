@@ -3739,6 +3739,51 @@ function snapshotMatchesCurrent_(sheet, snap) {
   return String(current.value) === String(snap.value.value);
 }
 
+
+function persistPaymentBackupLog_(backup, actionName, status, note) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sh = ss.getSheetByName(CONFIG.LOG_SHEET);
+    if (!sh) return false;
+    sh.appendRow([
+      new Date(),
+      '',
+      'ระบบ',
+      'ระบบ',
+      actionName === 'paymentSourceRollback' ? 'ยกเลิกรายการ' : 'สำรองก่อนลงยอด',
+      String(backup.reviewRowNo || ''),
+      String(backup.source || '') + (backup.sheet ? ' / ' + backup.sheet : ''),
+      status || 'สำเร็จ',
+      actionName || 'paymentSourceBackup',
+      status || 'สำเร็จ',
+      note || JSON.stringify(backup)
+    ]);
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+function loadPaymentBackupFromLog_(reviewRowNo) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sh = ss.getSheetByName(CONFIG.LOG_SHEET);
+    if (!sh || sh.getLastRow() < 2) return null;
+    const values = sh.getRange(2, 1, sh.getLastRow() - 1, 11).getDisplayValues();
+    for (let i = values.length - 1; i >= 0; i--) {
+      if (String(values[i][8] || '').trim() !== 'paymentSourceBackup') continue;
+      if (String(values[i][5] || '').trim() !== String(reviewRowNo)) continue;
+      const raw = String(values[i][10] || '').trim();
+      if (!raw) continue;
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed && Number(parsed.reviewRowNo) === Number(reviewRowNo)) return parsed;
+      } catch (err) {}
+    }
+  } catch (err) {}
+  return null;
+}
+
 function applyApprovedPaymentToSource_(reviewRow, rawReviewRow, reviewRowNo) {
   if (!isTrue_(getSettingValue_('FINANCIAL_SOURCE_WRITES_ENABLED', false))) {
     return { ok: false, message: 'ระบบเขียนชีตต้นทางยังปิดอยู่' };
@@ -3843,6 +3888,7 @@ function applyApprovedPaymentToSource_(reviewRow, rawReviewRow, reviewRowNo) {
     createdAt: new Date().toISOString()
   };
   PropertiesService.getScriptProperties().setProperty(paymentSourceWriteKey_(reviewRowNo), JSON.stringify(backup));
+  persistPaymentBackupLog_(backup, 'paymentSourceBackup', 'สำเร็จ', JSON.stringify(backup));
 
   dueRange.setValue(nextDue);
   paidRange.setValue(amount);
@@ -3857,6 +3903,7 @@ function applyApprovedPaymentToSource_(reviewRow, rawReviewRow, reviewRowNo) {
   backup.after = Object.keys(unique).map(function(key) { return snapshotCell_(unique[key]); });
   backup.writtenAt = new Date().toISOString();
   PropertiesService.getScriptProperties().setProperty(paymentSourceWriteKey_(reviewRowNo), JSON.stringify(backup));
+  persistPaymentBackupLog_(backup, 'paymentSourceBackupAfter', 'สำเร็จ', JSON.stringify(backup));
 
   return {
     ok: true,
