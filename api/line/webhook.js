@@ -1008,11 +1008,44 @@ async function handleEvent(event) {
       return;
     }
 
-    const command = parseCommand(text);
+    let command = parseCommand(text);
 
-    // Customer self-service is public in 1:1 chat during the V6/10-69 pilot.
-    // Do not require staff permissions before verifying queue + exact full name.
+    // Distinguish staff from customers before interpreting a bare "queue amount" message.
+    // This prevents staff payment input such as "310-4 1200" from being treated as a customer binding attempt.
+    let staffSelfAccess = null;
     if (sourceType === "user" && lineUserId) {
+      try {
+        staffSelfAccess = await callSheetsBridge({
+          action: "checkAccess",
+          lineUserId,
+          sourceType,
+          groupId,
+          permission: "ดูข้อมูลลูกค้า",
+        });
+      } catch (error) {
+        console.warn("Staff pre-check failed", error);
+      }
+
+      if (staffSelfAccess?.allowed && !command) {
+        const barePayment = text.match(/^(\S+)\s+([0-9,]+(?:\.\d{1,2})?)$/);
+        if (barePayment) {
+          const paymentAccess = await callSheetsBridge({
+            action: "checkAccess",
+            lineUserId,
+            sourceType,
+            groupId,
+            permission: "บันทึกชำระ",
+          }).catch(() => null);
+          if (paymentAccess?.allowed) {
+            command = parseCommand("รับชำระ " + text);
+          }
+        }
+      }
+    }
+
+    // Customer self-service is public in 1:1 chat during the V6/10-69 pilot,
+    // but staff accounts must never be routed into customer binding/self-service.
+    if (sourceType === "user" && lineUserId && !staffSelfAccess?.allowed) {
       const customerField = customerFieldForText(text);
 
       const explicitBindingMatch = text.match(/^ผูกบัญชี\s+(\S+)\s+(.+\S)$/);
