@@ -1,5 +1,6 @@
 export const maxDuration = 60;
 import crypto from "node:crypto";
+import { syncStaffPaymentMenu } from "../../lib/staffRichMenu.js";
 import { callSheetsBridge, formatCustomerMatches } from "../../lib/sheetsBridge.js";
 import { parseCommand, formatCustomerInfo, formatHistory } from "../../lib/commands.js";
 import { linkVerifiedCustomerMenu } from "../../lib/customerRichMenu.js";
@@ -1055,6 +1056,18 @@ async function handleEvent(event) {
       return;
     }
 
+    // Reconcile only this authenticated staff account; never enumerate customers.
+    if (sourceType === "user" && text !== "เมนู") {
+      try {
+        const paymentAccess = await callSheetsBridge({
+          action: "checkAccess", lineUserId, sourceType, groupId, permission: "บันทึกชำระ",
+        });
+        await syncStaffPaymentMenu(lineUserId, !!paymentAccess.allowed);
+      } catch (error) {
+        console.warn("Staff payment menu could not be updated", error?.message);
+      }
+    }
+
     if (access.role === "เจ้าของ" && ["ส่งแจ้งลูกค้า", "ส่งแจ้งเตือนทันที"].includes(text)) {
       const result = await callSheetsBridge({
         action: "listCustomerNotificationSheets",
@@ -1229,11 +1242,33 @@ async function handleEvent(event) {
     }
 
     if (text === "เมนู") {
-      await replyMessage(event.replyToken, [{
+      const messages = [];
+      if (sourceType === "user") {
+        const paymentAccess = await callSheetsBridge({
+          action: "checkAccess", lineUserId, sourceType, groupId,
+          permission: "บันทึกชำระ",
+        });
+        try {
+          await syncStaffPaymentMenu(lineUserId, !!paymentAccess.allowed);
+        } catch (error) {
+          console.warn("Staff payment menu could not be updated", error?.message);
+        }
+        if (paymentAccess.allowed) messages.push({
+          type: "template",
+          altText: "รับชำระ — ส่งเข้าคิวตรวจสอบก่อน",
+          template: {
+            type: "buttons",
+            text: "รับชำระจากลูกค้า\nส่งเข้าคิวตรวจสอบก่อน ยังไม่แก้ยอดในชีตต้นทาง",
+            actions: [{ type: "message", label: "รับชำระ", text: "รับชำระ" }],
+          },
+        });
+      }
+      messages.push({
         type: "text",
         text: access.role === "เจ้าของ" ? "เมนูเจ้าของ Admin ID" : "เมนู Admin ID",
         quickReply: menuQuickReply(access.role || "")
-      }]);
+      });
+      await replyMessage(event.replyToken, messages);
       return;
     }
 
@@ -1268,6 +1303,17 @@ async function handleEvent(event) {
     }
 
     if (command) {
+      if (command.privateOnly && sourceType !== "user") {
+        await replyMessage(event.replyToken, [{ type: "text", text: "กรุณากดรับชำระในแชทส่วนตัวกับบอต" }]);
+        return;
+      }
+      if (command.action === "queuePayment" && (!command.query || !Number.isFinite(command.amount) || command.amount <= 0)) {
+        await replyMessage(event.replyToken, [{
+          type: "text",
+          text: "รับชำระ\nพิมพ์: " + command.prefix + " <เลขคิว> <ยอดชำระจริง>\nตัวอย่าง: " + command.prefix + " v6:101 500\nยอดต้องมากกว่า 0 บาท หากคิวซ้ำให้ระบุแหล่ง:คิว\nรายการจะเข้าคิวตรวจสอบก่อน ยังไม่แก้ยอดในชีตต้นทาง",
+        }]);
+        return;
+      }
       if (command.action === "verifyCustomerIdentity" && command.prefix === "กรอกชื่อเอง" && command.query && (!command.firstName || !command.lastName)) {
         await replyMessage(event.replyToken, [{
           type: "text",
