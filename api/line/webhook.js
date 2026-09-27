@@ -1597,7 +1597,7 @@ async function handleEvent(event) {
       if (command.action === "queuePayment" && (!command.query || !Number.isFinite(command.amount) || command.amount <= 0)) {
         await replyMessage(event.replyToken, [{
           type: "text",
-          text: "รับชำระ\nพิมพ์: " + command.prefix + " <เลขคิว> <ยอดชำระจริง>\nตัวอย่าง: " + command.prefix + " " + (command.query || "v6:101") + " 500\nยอดต้องมากกว่า 0 บาท หากคิวซ้ำให้ระบุแหล่ง:คิว\nรายการจะเข้าคิวตรวจสอบก่อน ยังไม่แก้ยอดในชีตต้นทาง",
+          text: "รับชำระ\nพิมพ์: <เลขคิว> <ยอดชำระจริง>\nตัวอย่าง: 310-4 1200\nระบบจะเลือกคิวที่ตรงเป๊ะก่อน หากยังซ้ำจึงค่อยให้ระบุเพิ่มเติม\nรายการจะเข้าคิวตรวจสอบก่อน ยังไม่แก้ยอดในชีตต้นทาง",
         }]);
         return;
       }
