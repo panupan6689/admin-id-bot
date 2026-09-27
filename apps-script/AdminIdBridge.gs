@@ -3926,7 +3926,7 @@ function rollbackReviewQueue_(body) {
 
   const rowNo = Number(String(body.query || '').trim());
   if (!Number.isInteger(rowNo) || rowNo < 2) {
-    return { ok: true, rolledBack: false, message: 'รูปแบบ: ย้อนคิว <เลขคิว>' };
+    return { ok: true, rolledBack: false, message: 'รูปแบบ: ยกเลิกรายการ <เลขคิว>' };
   }
 
   const backend = SpreadsheetApp.getActiveSpreadsheet();
@@ -3937,7 +3937,7 @@ function rollbackReviewQueue_(body) {
 
   const reviewRow = reviewSheet.getRange(rowNo, 1, 1, 12).getDisplayValues()[0];
   if (String(reviewRow[1] || '').trim() !== 'บันทึกชำระ') {
-    return { ok: true, rolledBack: false, message: 'ย้อนอัตโนมัติได้เฉพาะรายการบันทึกชำระ' };
+    return { ok: true, rolledBack: false, message: 'ยกเลิกรายการอัตโนมัติได้เฉพาะรายการบันทึกชำระ' };
   }
   if (String(reviewRow[8] || '').trim() !== 'ผ่าน') {
     return { ok: true, rolledBack: false, message: 'คิวนี้ไม่ได้อยู่สถานะผ่าน' };
@@ -3946,21 +3946,21 @@ function rollbackReviewQueue_(body) {
   const props = PropertiesService.getScriptProperties();
   const key = paymentSourceWriteKey_(rowNo);
   const raw = props.getProperty(key);
-  if (!raw) {
-    return { ok: true, rolledBack: false, message: 'คิวนี้ไม่มีข้อมูลสำรองต้นทาง จึงไม่สามารถย้อนอัตโนมัติได้' };
+  let backup = null;
+  if (raw) {
+    try { backup = JSON.parse(raw); } catch (err) {}
   }
-
-  let backup;
-  try { backup = JSON.parse(raw); } catch (err) {
-    return { ok: true, rolledBack: false, message: 'ข้อมูลสำรองของคิวนี้เสียหาย' };
+  if (!backup) backup = loadPaymentBackupFromLog_(rowNo);
+  if (!backup) {
+    return { ok: true, rolledBack: false, message: 'คิวนี้ไม่มีข้อมูลสำรองต้นทาง จึงไม่สามารถยกเลิกรายการอัตโนมัติได้' };
   }
   if (backup.reversedAt) {
-    return { ok: true, rolledBack: false, message: 'คิวนี้ถูกย้อนรายการไปแล้ว' };
+    return { ok: true, rolledBack: false, message: 'คิวนี้ถูกยกเลิกรายการไปแล้ว' };
   }
 
   const sourceSs = SpreadsheetApp.openById(String(backup.spreadsheetId || ''));
   const sourceSheet = sourceSs.getSheetByName(String(backup.sheet || ''));
-  if (!sourceSheet) return { ok: true, rolledBack: false, message: 'ไม่พบชีตต้นทางสำหรับย้อนรายการ' };
+  if (!sourceSheet) return { ok: true, rolledBack: false, message: 'ไม่พบชีตต้นทางสำหรับยกเลิกรายการ' };
 
   const after = Array.isArray(backup.after) ? backup.after : [];
   for (let i = 0; i < after.length; i++) {
@@ -3969,7 +3969,7 @@ function rollbackReviewQueue_(body) {
         ok: true,
         rolledBack: false,
         stale: true,
-        message: 'ต้นทางถูกแก้หลังจากกดผ่านแล้ว จึงไม่ย้อนทับอัตโนมัติ กรุณาตรวจชีตก่อน'
+        message: 'ต้นทางถูกแก้หลังจากกดผ่านแล้ว จึงไม่ยกเลิกทับอัตโนมัติ กรุณาตรวจชีตก่อน'
       };
     }
   }
@@ -3981,11 +3981,12 @@ function rollbackReviewQueue_(body) {
   backup.reversedAt = new Date().toISOString();
   backup.reversedBy = access.staffName || 'เจ้าของ';
   props.setProperty(key, JSON.stringify(backup));
+  persistPaymentBackupLog_(backup, 'paymentSourceRollback', 'สำเร็จ', 'ยกเลิกรายการ #' + rowNo + ' และคืนค่าต้นทางแล้ว');
 
-  reviewSheet.getRange(rowNo, 9).setValue('ย้อนรายการ');
+  reviewSheet.getRange(rowNo, 9).setValue('ยกเลิกรายการ');
   reviewSheet.getRange(rowNo, 10).setValue(access.staffName || 'เจ้าของ');
   reviewSheet.getRange(rowNo, 11).setValue(new Date());
-  reviewSheet.getRange(rowNo, 12).setValue('ย้อนค่าชีตต้นทางกลับก่อนอนุมัติแล้ว');
+  reviewSheet.getRange(rowNo, 12).setValue('ยกเลิกรายการและคืนค่าชีตต้นทางก่อนอนุมัติแล้ว');
 
   const history = backend.getSheetByName(CONFIG.HISTORY_SHEET);
   if (history) {
@@ -3998,14 +3999,14 @@ function rollbackReviewQueue_(body) {
       '',
       '',
       '',
-      'ย้อนรายการชำระ',
+      'ยกเลิกรายการชำระ',
       '',
       '',
       '',
       '',
       backup.amount || '',
       access.staffName || 'เจ้าของ',
-      'ย้อนคิวตรวจสอบ #' + rowNo + ' และคืนค่าชีตต้นทาง'
+      'ยกเลิกรายการ #' + rowNo + ' และคืนค่าชีตต้นทาง'
     ]);
   }
 
@@ -4016,7 +4017,7 @@ function rollbackReviewQueue_(body) {
     queue: backup.queue || '',
     name: backup.name || '',
     amount: backup.amount || '',
-    message: 'ย้อนคิว #' + rowNo + ' แล้ว และคืนค่าชีตต้นทางกลับก่อนกดผ่าน'
+    message: 'ยกเลิกรายการ #' + rowNo + ' แล้ว และคืนค่าชีตต้นทางกลับก่อนกดผ่าน'
   };
 }
 
