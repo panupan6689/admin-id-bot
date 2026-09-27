@@ -5,8 +5,11 @@
 - Approved payment now writes the actual paid amount into the calendar date, clears the old scheduled due cell, advances the due date by 10 days, and schedules the next fee while leaving principal/fee unchanged.
 - Added pre-write validation and cell snapshots before every financial source write.
 - Added owner-only `ย้อนคิว <เลข>` rollback to restore the exact pre-approval source cells when no later edit has changed them.
-- Added an in-LINE “ย้อนรายการ” quick action after a successful approved payment write.
-- Apps Script bridge target version: `2026.09.27-114`.
+- Added an in-LINE “ยกเลิก / ทำรายการใหม่” quick action after a successful approved payment write.
+- Persisted payment rollback backups to `Log ระบบ` so approved payments can be recovered even if Script Properties are unavailable.
+- Automatic rollover now requires the received amount to equal the current rent/fee and refuses automatic rollover when the payment is already one full cycle late.
+- Migrated approved review #2 (queue 310-4) into `v3/10-69` and recorded a rollback backup in `Log ระบบ`.
+- Apps Script bridge target version: `2026.09.27-115`.
 - Financial source writes remain controlled by `FINANCIAL_SOURCE_WRITES_ENABLED` and must not be enabled until bridge v114 is deployed live.
 
 # บันทึกการแก้ไขระบบ Admin ID
