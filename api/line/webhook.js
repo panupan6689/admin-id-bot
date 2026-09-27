@@ -1656,33 +1656,53 @@ async function handleEvent(event) {
       if (command.activityToday) payload.activityToday = true;
       if (command.switchKey) payload.switchKey = command.switchKey;
 
-      let result = await callSheetsBridge(payload);
-
-      // If a bare queue lookup returns multiple fuzzy matches, prefer one exact queue match.
-      // This prevents queue 310-4 from being confused with a phone number containing 3104.
-      if (
-        command.action === "queuePayment" &&
-        result?.needsSelection &&
-        Array.isArray(result.matches) &&
-        command.query
-      ) {
+      let result;
+      if (command.action === "queuePayment") {
+        const scopes = [
+          ["v6", "V6/10-69"],
+          ["v1/v3", "v3/10-69"],
+        ];
         const targetQueue = String(command.query || "").trim().toLowerCase().replace(/\s+/g, "");
-        const exactQueueMatches = result.matches.filter((m) =>
-          String(m?.queue || "").trim().toLowerCase().replace(/\s+/g, "") === targetQueue
-        );
-        if (exactQueueMatches.length === 1) {
-          const exact = exactQueueMatches[0];
-          const exactIdentity = String(exact.appleId || exact.phone || exact.name || "").trim();
-          const qualifiedQuery = exact.source && exactIdentity
-            ? String(exact.source).trim() + ":" + exactIdentity
-            : "";
-          if (qualifiedQuery) {
+        const foundByScope = await Promise.all(scopes.map(async ([sourceName, sheetName]) => {
+          try {
+            const found = await callSheetsBridge({
+              action: "searchCustomer",
+              query: sourceName + ":" + command.query,
+              lineUserId,
+              sourceType,
+              groupId,
+              paymentLookup: true,
+            });
+            return (Array.isArray(found?.matches) ? found.matches : []).filter((m) =>
+              String(m?.source || "").trim().toLowerCase() === sourceName.toLowerCase() &&
+              String(m?.sheet || "").trim().toLowerCase() === sheetName.toLowerCase() &&
+              String(m?.queue || "").trim().toLowerCase().replace(/\s+/g, "") === targetQueue
+            );
+          } catch (error) {
+            console.warn("Scoped payment lookup failed", sourceName, sheetName, error?.message);
+            return [];
+          }
+        }));
+        const exactMatches = foundByScope.flat();
+
+        if (exactMatches.length === 0) {
+          result = { ok: true, queued: false, message: "ไม่พบคิวในแถบ V6/10-69 หรือ v3/10-69" };
+        } else if (exactMatches.length > 1) {
+          result = { ok: true, queued: false, needsSelection: true, matches: exactMatches };
+        } else {
+          const exact = exactMatches[0];
+          const identity = String(exact.appleId || exact.phone || exact.name || "").trim();
+          if (!identity) {
+            result = { ok: true, queued: false, message: "พบคิว แต่ข้อมูลลูกค้าไม่ครบ" };
+          } else {
             result = await callSheetsBridge({
               ...payload,
-              query: qualifiedQuery,
+              query: String(exact.source).trim() + ":" + identity,
             });
           }
         }
+      } else {
+        result = await callSheetsBridge(payload);
       }
 
       let responseText = "";
