@@ -1029,16 +1029,16 @@ async function handleEvent(event) {
       if (staffSelfAccess?.allowed && !command) {
         const barePayment = text.match(/^(\S+)\s+([0-9,]+(?:\.\d{1,2})?)$/);
         if (barePayment) {
-          const paymentAccess = await callSheetsBridge({
-            action: "checkAccess",
-            lineUserId,
-            sourceType,
-            groupId,
+          // Convert immediately; the normal command access gate below will enforce
+          // the "บันทึกชำระ" permission exactly once.
+          command = {
+            prefix: "รับชำระ",
+            action: "queuePayment",
             permission: "บันทึกชำระ",
-          }).catch(() => null);
-          if (paymentAccess?.allowed) {
-            command = parseCommand("รับชำระ " + text);
-          }
+            privateOnly: true,
+            query: barePayment[1],
+            amount: Number(barePayment[2].replace(/,/g, "")),
+          };
         }
       }
     }
