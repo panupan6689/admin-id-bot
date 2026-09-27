@@ -1,5 +1,5 @@
 const CONFIG = {
-  VERSION: '2026.09.27-115',
+  VERSION: '2026.09.27-116',
   CUSTOMER_PILOT_SOURCE: 'v6',
   CUSTOMER_PILOT_SHEET: 'V6/10-69',
   CUSTOMER_BINDING_TARGETS: [
@@ -197,7 +197,7 @@ function postDeploySelfTest_() {
     });
   }
 
-  add('version', CONFIG.VERSION === '2026.09.27-115', CONFIG.VERSION, true);
+  add('version', CONFIG.VERSION === '2026.09.27-116', CONFIG.VERSION, true);
   add('เจ้าหน้าที่', !!ss.getSheetByName(CONFIG.STAFF_SHEET), CONFIG.STAFF_SHEET, true);
   add('ลิ้งชีต', !!ss.getSheetByName(CONFIG.SOURCE_SHEET), CONFIG.SOURCE_SHEET, true);
   add('ประวัติลูกค้า', !!ss.getSheetByName(CONFIG.HISTORY_SHEET), CONFIG.HISTORY_SHEET, true);
@@ -427,7 +427,7 @@ function readinessCheck_(body) {
     checks.push({ name: name, pass: !!pass, detail: detail || '' });
   }
 
-  add('Apps Script version', CONFIG.VERSION === '2026.09.27-115', CONFIG.VERSION);
+  add('Apps Script version', CONFIG.VERSION === '2026.09.27-116', CONFIG.VERSION);
   add('BOT_MASTER_ENABLED', isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)), String(getSettingValue_('BOT_MASTER_ENABLED', true)));
   add('BOT_STAFF_ENABLED', isTrue_(getSettingValue_('BOT_STAFF_ENABLED', true)), String(getSettingValue_('BOT_STAFF_ENABLED', true)));
 
@@ -3717,7 +3717,8 @@ function snapshotCell_(range) {
     a1: range.getA1Notation(),
     formula: range.getFormula() || '',
     value: packCellValue_(range.getValue()),
-    numberFormat: range.getNumberFormat() || ''
+    numberFormat: range.getNumberFormat() || '',
+    background: range.getBackground() || ''
   };
 }
 
@@ -3726,6 +3727,7 @@ function restoreCellSnapshot_(sheet, snap) {
   if (snap.formula) range.setFormula(snap.formula);
   else range.setValue(unpackCellValue_(snap.value));
   if (snap.numberFormat) range.setNumberFormat(snap.numberFormat);
+  if (snap.background) range.setBackground(snap.background);
 }
 
 function snapshotMatchesCurrent_(sheet, snap) {
@@ -3892,6 +3894,7 @@ function applyApprovedPaymentToSource_(reviewRow, rawReviewRow, reviewRowNo) {
 
   dueRange.setValue(nextDue);
   paidRange.setValue(amount);
+  paidRange.setBackground('#b7e1cd');
   if (oldDueCol !== paidCol && oldDueCol !== nextDueCol) oldDueRange.clearContent();
   nextDueRange.setValue(fee);
   try {
