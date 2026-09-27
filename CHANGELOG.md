@@ -1,4 +1,8 @@
 ## 2026-09-27 — Payment source write + rollback
+- Exact payment row handoff now revalidates source, tab, row, queue, and customer name in Apps Script before queueing a payment.
+- Added a safe bridge-version health check at `/api/line/webhook?bridge=version`; production currently reports the live Apps Script version independently from Vercel.
+- Final bridge target is `2026.09.27-115`; keep `FINANCIAL_SOURCE_WRITES_ENABLED=FALSE` until that exact live version is confirmed.
+
 - Renamed the approved-payment rollback UX from `ย้อนคิว <เลข>` / “ย้อนรายการ” to `ยกเลิกรายการ <เลข>` / “ยกเลิก / ทำรายการใหม่”.
 
 - Restricted receive-payment lookup to `V6/10-69` and `v3/10-69`.
