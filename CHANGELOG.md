@@ -1,3 +1,13 @@
+## 2026-09-27 — Payment source write + rollback
+
+- Restricted receive-payment lookup to `V6/10-69` and `v3/10-69`.
+- Approved payment now writes the actual paid amount into the calendar date, clears the old scheduled due cell, advances the due date by 10 days, and schedules the next fee while leaving principal/fee unchanged.
+- Added pre-write validation and cell snapshots before every financial source write.
+- Added owner-only `ย้อนคิว <เลข>` rollback to restore the exact pre-approval source cells when no later edit has changed them.
+- Added an in-LINE “ย้อนรายการ” quick action after a successful approved payment write.
+- Apps Script bridge target version: `2026.09.27-114`.
+- Financial source writes remain controlled by `FINANCIAL_SOURCE_WRITES_ENABLED` and must not be enabled until bridge v114 is deployed live.
+
 # บันทึกการแก้ไขระบบ Admin ID
 
 ไฟล์นี้ใช้บันทึกการเปลี่ยนแปลงของระบบ LINE OA → Vercel → Google Apps Script → Google Sheets
