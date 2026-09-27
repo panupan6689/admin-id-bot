@@ -1713,6 +1713,7 @@ async function handleEvent(event) {
       }
 
       let responseText = "";
+      let responseQuickReply = null;
       if (command.action === "getRecentIdentityImages") {
         const items = Array.isArray(result.items) ? result.items : [];
 
@@ -2023,6 +2024,8 @@ async function handleEvent(event) {
         }
       } else if (command.action === "cancelReviewQueue") {
         responseText = result.message || (result.cancelled ? "ยกเลิกคิวแล้ว" : "ยกเลิกคิวไม่ได้");
+      } else if (command.action === "rollbackReviewQueue") {
+        responseText = result.message || (result.rolledBack ? "ย้อนรายการแล้ว" : "ย้อนรายการไม่ได้");
       } else if (command.action === "planSourceWrite") {
         const p = result.plan;
         responseText = p ? [
@@ -2062,12 +2065,27 @@ async function handleEvent(event) {
           : "ไม่มีคิวรอตรวจ";
       } else if (command.action === "resolveReviewQueue") {
         responseText = result.message || (result.resolved ? "อัปเดตคิวแล้ว" : "ไม่สามารถดำเนินการได้");
+        if (result.resolved && result.decision === "ผ่าน" && result.sourceWritten) {
+          responseText += "\nหากกดผิด กด “ย้อนรายการ” หรือพิมพ์ ย้อนคิว " + result.rowNo;
+          responseQuickReply = {
+            items: [{
+              type: "action",
+              action: {
+                type: "message",
+                label: "ย้อนรายการ",
+                text: "ย้อนคิว " + result.rowNo
+              }
+            }]
+          };
+        }
 
         if (result.resolved && result.requesterLineUserId) {
           const staffText = result.decision === "ผ่าน"
             ? (result.type === "ปิดยอด"
                 ? "คิว #" + result.rowNo + " ผ่านการตรวจสอบแล้ว\nรอรับรหัส***** สักครู่นะครับ ภายใน 24 ชม."
-                : "คิว #" + result.rowNo + " ผ่านการตรวจสอบแล้ว\nบันทึกประวัติแล้ว แต่ยังไม่มีการแก้ยอดในชีตต้นทาง")
+                : result.sourceWritten
+                  ? "คิว #" + result.rowNo + " ผ่านการตรวจสอบแล้ว\nลงยอดในชีตต้นทางและเลื่อนวันจ่ายรอบถัดไปแล้ว"
+                  : "คิว #" + result.rowNo + " ผ่านการตรวจสอบแล้ว\nบันทึกประวัติแล้ว")
             : "คิว #" + result.rowNo + " ไม่ผ่านการตรวจสอบ";
           await pushMessage(result.requesterLineUserId, [
             { type: "text", text: staffText }
@@ -2180,7 +2198,9 @@ async function handleEvent(event) {
         }
       }
 
-      await replyMessage(event.replyToken, [{ type: "text", text: responseText || "ดำเนินการแล้ว" }]);
+      const finalReply = { type: "text", text: responseText || "ดำเนินการแล้ว" };
+      if (responseQuickReply) finalReply.quickReply = responseQuickReply;
+      await replyMessage(event.replyToken, [finalReply]);
 
       await safeLogAction({
         lineUserId,
