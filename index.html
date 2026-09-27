@@ -29,9 +29,9 @@
 
 <section class="cards">
 <div class="card clickable" id="cardCustomers"><div class="label">ลูกค้าที่ผูก LINE</div><div id="customerCount" class="metric">—</div><div id="customerSub" class="sub">รวมทุกชีต</div></div>
-<div class="card clickable" id="cardToday"><div class="label">ครบกำหนดวันนี้</div><div id="todayCount" class="metric">—</div><div class="sub">ทุกแหล่งที่ระบบอ่านได้</div></div>
-<div class="card clickable" id="cardUpcoming"><div class="label">ใกล้ครบกำหนด</div><div id="upcomingCount" class="metric">—</div><div class="sub">จากระบบแจ้งเตือน</div></div>
-<div class="card clickable" id="cardOverdue"><div class="label">ค้างชำระ</div><div id="overdueCount" class="metric">—</div><div class="sub">จากระบบแจ้งเตือน</div></div>
+<div class="card clickable" id="cardToday"><div class="label">ครบกำหนดวันนี้</div><div id="todayCount" class="metric">0</div><div class="sub">ทุกแหล่งที่ระบบอ่านได้</div></div>
+<div class="card clickable" id="cardUpcoming"><div class="label">ใกล้ครบกำหนด</div><div id="upcomingCount" class="metric">0</div><div class="sub">จากระบบแจ้งเตือน</div></div>
+<div class="card clickable" id="cardOverdue"><div class="label">ค้างชำระ</div><div id="overdueCount" class="metric">0</div><div class="sub">จากระบบแจ้งเตือน</div></div>
 </section>
 
 <section class="panel">
@@ -83,7 +83,8 @@
         savedAt:Date.now(),
         items:ITEMS,
         owner:owner||"",
-        selectedTargets:SELECTED_TARGETS.map(function(x){return {source:x.source,sheet:x.sheet};})
+        selectedTargets:SELECTED_TARGETS.map(function(x){return {source:x.source,sheet:x.sheet};}),
+        counts:{today:byId("todayCount").textContent,upcoming:byId("upcomingCount").textContent,overdue:byId("overdueCount").textContent}
       }));
     }catch(e){}
   }
@@ -106,6 +107,11 @@
       renderSelectedTargets();
       updateSelectedSummary();
       updateCustomerCount();
+      if(cache.counts){
+        if(cache.counts.today&&cache.counts.today!=="—")byId("todayCount").textContent=cache.counts.today;
+        if(cache.counts.upcoming&&cache.counts.upcoming!=="—")byId("upcomingCount").textContent=cache.counts.upcoming;
+        if(cache.counts.overdue&&cache.counts.overdue!=="—")byId("overdueCount").textContent=cache.counts.overdue;
+      }
       showApp();
       byId("dot").className="dot ok";
       byId("sys").textContent="เปิดจากข้อมูลล่าสุด";
@@ -296,15 +302,21 @@
       {mode:"upcoming",id:"upcomingCount"},
       {mode:"overdue",id:"overdueCount"}
     ];
-    modes.forEach(function(x){
+    function next(i){
+      if(i>=modes.length){saveDashboardCache();return;}
+      var x=modes[i];
       fetch("/api/web/summary?mode="+encodeURIComponent(x.mode),{headers:authHeaders(),cache:"no-store"})
         .then(function(r){return r.json();})
         .then(function(j){
-          if(!j||!j.ok)return;
-          var items=Array.isArray(j.items)?j.items:[];
-          byId(x.id).textContent=items.length;
-        }).catch(function(){});
-    });
+          if(j&&j.ok){
+            var items=Array.isArray(j.items)?j.items:[];
+            byId(x.id).textContent=items.length;
+            saveDashboardCache();
+          }
+        }).catch(function(){})
+        .then(function(){setTimeout(function(){next(i+1);},250);});
+    }
+    next(0);
   }
 
   function sendNotification(one){
