@@ -50,6 +50,8 @@
 <div class="field"><label>ข้อมูลที่ต้องการแจ้ง</label><select id="fieldAll"><option value="due">กำหนดครบวันชำระ</option><option value="outstanding">ยอดค้าง</option><option value="close">ยอดปิด</option></select></div><br><button id="sendAll" class="btn green" disabled>ตรวจและส่งทุกคน</button></div>
 <div class="action"><b>ส่งลูกค้ารายคน</b><p>ระบุเลขคิวลูกค้า ระบบจะตรวจว่าคิวอยู่ในชีตที่เลือกและผูก LINE แล้วก่อนส่ง</p>
 <div class="row"><div class="field"><label>เลขคิว</label><input id="queue" placeholder="เช่น 6101"></div><div class="field"><label>ข้อมูลที่ต้องการแจ้ง</label><select id="fieldOne"><option value="due">กำหนดครบวันชำระ</option><option value="outstanding">ยอดค้าง</option><option value="close">ยอดปิด</option></select></div></div><br><button id="sendOne" class="btn soft" disabled>ตรวจและส่งรายคน</button></div>
+<div class="action"><b>รับชำระ</b><p>สำหรับลูกค้าที่ชำระเงินจริงแล้ว ให้ใส่คิวและยอดที่รับ ระบบจะส่งเข้าคิวตรวจสอบก่อน ไม่แก้ชีตต้นทางทันที</p>
+<div class="row"><div class="field"><label>เลขคิว</label><input id="payQueue" placeholder="เช่น 6101"></div><div class="field"><label>ยอดที่ชำระจริง</label><input id="payAmount" type="number" min="0" step="0.01" placeholder="เช่น 500"></div></div><br><button id="recordPayment" class="btn primary">รับชำระ / ส่งเข้าคิวตรวจสอบ</button></div>
 </div>
 <div id="sendResult" class="success hidden"></div>
 <div class="warning">ก่อนกดส่ง ระบบจะถามยืนยันอีกครั้ง และรายการที่ส่ง/รอส่งแล้วในวันเดียวกันจะไม่ถูกสร้างซ้ำ</div>
@@ -253,7 +255,7 @@
           deltaText=mode==="overdue"?("เกิน "+Math.abs(Number(item.daysDelta||0))+" วัน"):mode==="upcoming"?("อีก "+Number(item.daysDelta||0)+" วัน"):"วันนี้";
           out+='<div class="item"><div class="itemtop"><div><div class="itemname">'+escapeHtml(item.name||"-")+'</div><div class="itemmeta">คิว '+escapeHtml(item.queue||"-")+' • '+escapeHtml(item.source||"-")+' / '+escapeHtml(item.sheet||"-")+'<br>วันครบกำหนด '+escapeHtml(item.dueDate||"-")+' • '+escapeHtml(deltaText)+(item.fee?'<br>ค่าเช่า '+escapeHtml(item.fee):'')+(item.status?'<br>สถานะ '+escapeHtml(item.status):'')+'</div></div></div>';
           if(item.queue&&item.source&&item.sheet){
-            out+='<button class="btn soft itembtn" data-source="'+escapeHtml(item.source)+'" data-sheet="'+escapeHtml(item.sheet)+'" data-queue="'+escapeHtml(item.queue)+'">ไปส่งแจ้งเตือนรายนี้</button>';
+            out+='<button class="btn soft itembtn" data-source="'+escapeHtml(item.source)+'" data-sheet="'+escapeHtml(item.sheet)+'" data-queue="'+escapeHtml(item.queue)+'">ไปส่งแจ้งเตือนรายนี้</button><button class="btn green itembtn paybtn" data-payqueue="'+escapeHtml(item.queue)+'">รับชำระ</button>';
           }
           out+='</div>';
         }
@@ -267,6 +269,13 @@
           renderSelectedTargets();updateSelectedSummary();updateCustomerCount();byId("queue").value=q; syncButtons();saveDashboardCache();
           byId("dueModal").classList.add("hidden");
           var tab=document.querySelector('.tab[data-view="notify"]'); if(tab) tab.click();
+        };}
+        var pbs=byId("dueList").querySelectorAll(".paybtn"),p;
+        for(p=0;p<pbs.length;p++){pbs[p].onclick=function(){
+          byId("payQueue").value=this.getAttribute("data-payqueue")||"";
+          byId("dueModal").classList.add("hidden");
+          var tab=document.querySelector('.tab[data-view="notify"]'); if(tab) tab.click();
+          setTimeout(function(){try{byId("payAmount").focus();}catch(e){}},50);
         };}
       }).catch(function(e){byId("dueList").innerHTML='<div class="empty"><b>โหลดไม่สำเร็จ</b><p>'+escapeHtml(String((e&&e.message)||e))+'</p></div>';});
   }
@@ -317,6 +326,31 @@
         .then(function(){setTimeout(function(){next(i+1);},250);});
     }
     next(0);
+  }
+
+  function recordPayment(){
+    var q=byId("payQueue").value.trim();
+    var amount=Number(byId("payAmount").value);
+    if(!q){alert("กรุณาใส่เลขคิว");return;}
+    if(!amount||amount<=0){alert("กรุณาใส่ยอดที่ชำระจริง");return;}
+    if(!confirm("ยืนยันรับชำระคิว "+q+" จำนวน "+amount.toLocaleString("th-TH")+" บาท และส่งเข้าคิวตรวจสอบ ?"))return;
+    var btn=byId("recordPayment"),box=byId("sendResult");
+    btn.disabled=true;btn.textContent="กำลังบันทึก…";box.classList.add("hidden");
+    var headers=authHeaders();headers["Content-Type"]="application/json";
+    fetch("/api/web/send",{method:"POST",headers:headers,body:JSON.stringify({action:"record_payment",queue:q,amount:amount})})
+      .then(function(r){return r.json().then(function(j){return {r:r,j:j};});})
+      .then(function(x){
+        if(x.r.status===401){try{sessionStorage.removeItem("adminIdWebToken");}catch(e){}location.reload();return;}
+        if(!x.r.ok||!x.j.ok)throw new Error(x.j.error||"บันทึกไม่ได้");
+        box.textContent=(x.j.message||"ส่งเข้าคิวตรวจสอบแล้ว")+(x.j.rowNo?(" • คิวตรวจสอบ #"+x.j.rowNo):"");
+        box.classList.remove("hidden");
+        byId("payAmount").value="";
+      }).catch(function(e){
+        box.textContent="ผิดพลาด: "+String((e&&e.message)||e);
+        box.classList.remove("hidden");
+      }).then(function(){
+        btn.disabled=false;btn.textContent="รับชำระ / ส่งเข้าคิวตรวจสอบ";
+      });
   }
 
   function sendNotification(one){
@@ -376,6 +410,7 @@
   byId("cardOverdue").onclick=function(){openDue("overdue");};
   byId("closeDue").onclick=function(){byId("dueModal").classList.add("hidden");};
   byId("dueModal").onclick=function(e){if(e.target===byId("dueModal"))byId("dueModal").classList.add("hidden");};
+  byId("recordPayment").onclick=recordPayment;
   byId("sendAll").onclick=function(){sendNotification(false);};
   byId("sendOne").onclick=function(){sendNotification(true);};
   window.loadConfig=loadConfig;
