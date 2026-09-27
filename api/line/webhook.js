@@ -1658,16 +1658,27 @@ async function handleEvent(event) {
 
       let result;
       if (command.action === "queuePayment") {
-        const scopes = [
+        const rawPaymentQuery = String(command.query || "").trim();
+        let requestedPaymentSource = "";
+        let paymentQueue = rawPaymentQuery;
+        const prefixMatch = rawPaymentQuery.match(/^(v6|v1\/v3):(.+)$/i);
+        if (prefixMatch) {
+          requestedPaymentSource = prefixMatch[1].toLowerCase();
+          paymentQueue = String(prefixMatch[2] || "").trim();
+        }
+        const allScopes = [
           ["v6", "V6/10-69"],
           ["v1/v3", "v3/10-69"],
         ];
-        const targetQueue = String(command.query || "").trim().toLowerCase().replace(/\s+/g, "");
+        const scopes = requestedPaymentSource
+          ? allScopes.filter(([sourceName]) => sourceName.toLowerCase() === requestedPaymentSource)
+          : allScopes;
+        const targetQueue = paymentQueue.toLowerCase().replace(/\s+/g, "");
         const foundByScope = await Promise.all(scopes.map(async ([sourceName, sheetName]) => {
           try {
             const found = await callSheetsBridge({
               action: "searchCustomer",
-              query: sourceName + ":" + command.query,
+              query: sourceName + ":" + paymentQueue,
               lineUserId,
               sourceType,
               groupId,
@@ -1691,13 +1702,20 @@ async function handleEvent(event) {
           result = { ok: true, queued: false, needsSelection: true, matches: exactMatches };
         } else {
           const exact = exactMatches[0];
-          const identity = String(exact.name || exact.phone || exact.appleId || "").trim();
+          const identity = String(exact.appleId || exact.phone || exact.name || "").trim();
           if (!identity) {
             result = { ok: true, queued: false, message: "พบคิว แต่ข้อมูลลูกค้าไม่ครบ" };
           } else {
             result = await callSheetsBridge({
               ...payload,
               query: String(exact.source).trim() + ":" + identity,
+              exactCustomer: {
+                source: String(exact.source || "").trim(),
+                sheet: String(exact.sheet || "").trim(),
+                row: Number(exact.row || 0),
+                queue: String(exact.queue || "").trim(),
+                name: String(exact.name || "").trim(),
+              },
             });
             if (result?.needsSelection) {
               result = {
