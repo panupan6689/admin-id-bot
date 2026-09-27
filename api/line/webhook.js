@@ -1,6 +1,6 @@
 export const maxDuration = 60;
 import crypto from "node:crypto";
-import { notifyCustomerSlip, serveSlipImage } from "../../lib/customerSlipAlerts.js";
+import { notifyCustomerSlip, serveSlipImage, slipImageToken } from "../../lib/customerSlipAlerts.js";
 import { syncStaffPaymentMenu } from "../../lib/staffRichMenu.js";
 import { callSheetsBridge, formatCustomerMatches } from "../../lib/sheetsBridge.js";
 import { parseCommand, formatCustomerInfo, formatHistory } from "../../lib/commands.js";
@@ -625,6 +625,124 @@ function formatCustomerSelfResult(result, field) {
   return blocks.join("\n\n");
 }
 
+
+async function broadcastStaffSubmittedSlip(event) {
+  if (event.source?.type !== "user" || event.message?.type !== "image") return { handled:false };
+  const lineUserId = String(event.source?.userId || "").trim();
+  if (!lineUserId) return { handled:false };
+
+  const sender = await callSheetsBridge({
+    action: "checkAccess",
+    lineUserId,
+    sourceType: "user",
+    permission: "ดูข้อมูลลูกค้า",
+  });
+  const allowedRoles = new Set(["เจ้าของ","แอดมิน","admin","Admin","เจ้าหน้าที่","พนักงาน","staff","Staff"]);
+  if (!sender?.allowed || !allowedRoles.has(sender.role)) return { handled:false };
+
+  const lookup = await callSheetsBridge({
+    action: "getStaffSlipRecipients",
+    lineUserId,
+    sourceType: "user",
+  });
+  if (!lookup?.allowed) return { handled:false };
+
+  const recipients = [...new Set(lookup.recipients || [])];
+  const base = String(process.env.PUBLIC_BASE_URL || "https://admin-id-bot.vercel.app").replace(/\/$/, "");
+  const imageUrl = base + "/api/line/webhook?slip=" + encodeURIComponent(slipImageToken(event.message.id));
+  const sentAt = new Date(event.timestamp || Date.now()).toLocaleString("th-TH", { timeZone:"Asia/Bangkok" });
+  const senderName = sender.staffName || sender.role || "เจ้าหน้าที่";
+  let sent = 0;
+  let failed = 0;
+
+  for (const to of recipients) {
+    const access = await callSheetsBridge({
+      action: "checkAccess",
+      lineUserId: to,
+      sourceType: "user",
+      permission: "ดูข้อมูลลูกค้า",
+    });
+    if (!access?.allowed || !allowedRoles.has(access.role)) continue;
+
+    const payment = await callSheetsBridge({
+      action: "checkAccess",
+      lineUserId: to,
+      sourceType: "user",
+      permission: "บันทึกชำระ",
+    });
+
+    const messages = [
+      {
+        type: "text",
+        text: [
+          "ได้รับรูปสลิปจากทีม — รอตรวจสอบ",
+          "ส่งโดย: " + senderName,
+          "ส่งเมื่อ: " + sentAt,
+          "ยังไม่ได้ระบุลูกค้า/คิวจากรูปนี้",
+          "กรุณาตรวจยอดเงินจริงก่อนรับชำระ"
+        ].join("\n"),
+      },
+      { type:"image", originalContentUrl:imageUrl, previewImageUrl:imageUrl },
+    ];
+
+    if (payment?.allowed) {
+      messages.push({
+        type:"flex",
+        altText:"รับชำระ / ระบุลูกค้าและยอด",
+        contents:{
+          type:"bubble",
+          size:"mega",
+          header:{
+            type:"box", layout:"vertical", paddingAll:"16px", backgroundColor:"#0D5D65",
+            contents:[
+              { type:"text", text:"ตรวจสอบการชำระ", color:"#FFFFFF", size:"lg", weight:"bold" },
+              { type:"text", text:"รูปที่ส่งโดยทีม • ยังไม่ได้ระบุคิว", color:"#D8F2EF", size:"sm", margin:"sm", wrap:true },
+            ],
+          },
+          body:{
+            type:"box", layout:"vertical", paddingAll:"16px", spacing:"sm",
+            contents:[
+              { type:"text", text:"กดรับชำระ แล้วระบุเลขคิวและยอดชำระจริงในขั้นถัดไป", size:"sm", color:"#173B46", wrap:true },
+              { type:"separator", margin:"md", color:"#DDE9EA" },
+              { type:"text", text:"รายการจะเข้าคิวตรวจสอบก่อน และยังไม่แก้ยอดในชีตต้นทางอัตโนมัติ", size:"xs", color:"#73848B", wrap:true, margin:"md" },
+            ],
+          },
+          footer:{
+            type:"box", layout:"vertical", paddingAll:"14px", backgroundColor:"#F1F8F8",
+            contents:[
+              { type:"button", style:"primary", color:"#0D5D65", height:"sm",
+                action:{ type:"message", label:"รับชำระ", text:"รับชำระ" } },
+            ],
+          },
+        },
+      });
+    }
+
+    try {
+      await pushMessage(to, messages);
+      sent++;
+    } catch (error) {
+      failed++;
+      console.warn("Staff slip broadcast push failed", { to, error: error?.message });
+    }
+  }
+
+  await safeLogAction({
+    lineUserId,
+    staffName: sender.staffName || "",
+    role: sender.role || "",
+    command: "ส่งรูปสลิปให้ทีม",
+    query: "",
+    source: "LINE ส่วนตัว",
+    result: "แจ้งสำเร็จ " + sent + " ไม่สำเร็จ " + failed,
+    actionName: "staffSlipBroadcast",
+    status: failed || !sent ? "รอดำเนินการ" : "สำเร็จ",
+    note: "รูปจากเจ้าหน้าที่ ยังไม่ได้ระบุลูกค้า/คิว",
+  });
+
+  return { handled:true, sent, failed };
+}
+
 async function handleEvent(event) {
   if (event.type === "follow") {
     await replyMessage(event.replyToken, [{
@@ -673,6 +791,16 @@ async function handleEvent(event) {
         await replyMessage(event.replyToken, [{ type: "text", text: alert.sent
           ? "ได้รับรูปแล้ว แจ้งแอดมิน/เจ้าของให้ตรวจสอบแล้วครับ\nยังไม่ยืนยันยอดชำระจนกว่าจะตรวจสอบเรียบร้อย"
           : "ได้รับรูปแล้ว แต่ยังแจ้งผู้ตรวจสอบไม่สำเร็จ กรุณาติดต่อแอดมินครับ" }]);
+        return;
+      }
+      const staffAlert = await broadcastStaffSubmittedSlip(event);
+      if (staffAlert.handled) {
+        await replyMessage(event.replyToken, [{
+          type: "text",
+          text: staffAlert.sent
+            ? "ส่งรูปสลิปให้ทีมตรวจสอบแล้ว " + staffAlert.sent + " คน\nผู้ที่มีสิทธิ์บันทึกชำระจะเห็นปุ่ม “รับชำระ”"
+            : "รับรูปแล้ว แต่ยังส่งต่อให้ทีมไม่สำเร็จ"
+        }]);
         return;
       }
       const [identityResult, slipResult] = await Promise.all([
