@@ -1691,7 +1691,7 @@ async function handleEvent(event) {
           result = { ok: true, queued: false, needsSelection: true, matches: exactMatches };
         } else {
           const exact = exactMatches[0];
-          const identity = String(exact.appleId || exact.phone || exact.name || "").trim();
+          const identity = String(exact.name || exact.phone || exact.appleId || "").trim();
           if (!identity) {
             result = { ok: true, queued: false, message: "พบคิว แต่ข้อมูลลูกค้าไม่ครบ" };
           } else {
