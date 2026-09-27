@@ -1672,8 +1672,9 @@ async function handleEvent(event) {
         );
         if (exactQueueMatches.length === 1) {
           const exact = exactQueueMatches[0];
-          const qualifiedQuery = exact.source && exact.queue
-            ? String(exact.source).trim() + ":" + String(exact.queue).trim()
+          const exactIdentity = String(exact.appleId || exact.phone || exact.name || "").trim();
+          const qualifiedQuery = exact.source && exactIdentity
+            ? String(exact.source).trim() + ":" + exactIdentity
             : "";
           if (qualifiedQuery) {
             result = await callSheetsBridge({
