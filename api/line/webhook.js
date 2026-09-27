@@ -2043,7 +2043,20 @@ async function handleEvent(event) {
       } else if (command.action === "cancelReviewQueue") {
         responseText = result.message || (result.cancelled ? "ยกเลิกคิวแล้ว" : "ยกเลิกคิวไม่ได้");
       } else if (command.action === "rollbackReviewQueue") {
-        responseText = result.message || (result.rolledBack ? "ย้อนรายการแล้ว" : "ย้อนรายการไม่ได้");
+        responseText = result.message || (result.rolledBack ? "ยกเลิกรายการแล้ว" : "ยกเลิกรายการไม่ได้");
+        if (result.rolledBack) {
+          responseText += "\nทำรายการใหม่ได้ทันที โดยกด “รับชำระใหม่” แล้วพิมพ์ คิว ยอด";
+          responseQuickReply = {
+            items: [{
+              type: "action",
+              action: {
+                type: "message",
+                label: "รับชำระใหม่",
+                text: "รับชำระ"
+              }
+            }]
+          };
+        }
       } else if (command.action === "planSourceWrite") {
         const p = result.plan;
         responseText = p ? [
