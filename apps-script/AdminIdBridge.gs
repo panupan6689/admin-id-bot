@@ -1,5 +1,5 @@
 const CONFIG = {
-  VERSION: '2026.09.27-112',
+  VERSION: '2026.09.27-113',
   CUSTOMER_PILOT_SOURCE: 'v6',
   CUSTOMER_PILOT_SHEET: 'V6/10-69',
   CUSTOMER_BINDING_TARGETS: [
@@ -110,6 +110,8 @@ function doPost(e) {
         result = buildCustomerNotificationBatch_(body); break;
       case 'getCustomerContactRecipients':
         result = getCustomerContactRecipients_(body); break;
+      case 'getStaffSlipRecipients':
+        result = getStaffSlipRecipients_(body); break;
       case 'requestCustomerBinding':
         result = requestCustomerBinding_(body); break;
       case 'getCustomerSelf':
@@ -193,7 +195,7 @@ function postDeploySelfTest_() {
     });
   }
 
-  add('version', CONFIG.VERSION === '2026.09.27-112', CONFIG.VERSION, true);
+  add('version', CONFIG.VERSION === '2026.09.27-113', CONFIG.VERSION, true);
   add('เจ้าหน้าที่', !!ss.getSheetByName(CONFIG.STAFF_SHEET), CONFIG.STAFF_SHEET, true);
   add('ลิ้งชีต', !!ss.getSheetByName(CONFIG.SOURCE_SHEET), CONFIG.SOURCE_SHEET, true);
   add('ประวัติลูกค้า', !!ss.getSheetByName(CONFIG.HISTORY_SHEET), CONFIG.HISTORY_SHEET, true);
@@ -880,6 +882,25 @@ function getAllActiveStaffLineIds_() {
   }).filter(function(v, i, a) {
     return a.indexOf(v) === i;
   });
+}
+
+function getStaffSlipRecipients_(body) {
+  const access = checkAccess_({
+    lineUserId: body.lineUserId,
+    sourceType: body.sourceType || 'user',
+    groupId: body.groupId || '',
+    permission: 'ดูข้อมูลลูกค้า'
+  });
+  if (!access || !access.allowed) {
+    return { ok: true, allowed: false, recipients: [], message: access && access.message ? access.message : 'ไม่มีสิทธิ์' };
+  }
+  return {
+    ok: true,
+    allowed: true,
+    staffName: access.staffName || '',
+    role: access.role || '',
+    recipients: getAllActiveStaffLineIds_()
+  };
 }
 
 function ownerAccessForCustomerNotification_(body) {
