@@ -1,5 +1,5 @@
 const CONFIG = {
-  VERSION: '2026.09.26-111',
+  VERSION: '2026.09.27-112',
   CUSTOMER_PILOT_SOURCE: 'v6',
   CUSTOMER_PILOT_SHEET: 'V6/10-69',
   CUSTOMER_BINDING_TARGETS: [
@@ -62,6 +62,10 @@ function doPost(e) {
         result = readinessCheck_(body); break;
       case 'setBotSwitch':
         result = setBotSwitch_(body); break;
+      case 'getCustomerConversationPause':
+        result = getCustomerConversationPause_(body); break;
+      case 'setCustomerConversationPause':
+        result = setCustomerConversationPause_(body); break;
       case 'checkAccess':
         result = checkAccess_(body); break;
       case 'registerStaff':
@@ -189,7 +193,7 @@ function postDeploySelfTest_() {
     });
   }
 
-  add('version', CONFIG.VERSION === '2026.09.26-111', CONFIG.VERSION, true);
+  add('version', CONFIG.VERSION === '2026.09.27-112', CONFIG.VERSION, true);
   add('เจ้าหน้าที่', !!ss.getSheetByName(CONFIG.STAFF_SHEET), CONFIG.STAFF_SHEET, true);
   add('ลิ้งชีต', !!ss.getSheetByName(CONFIG.SOURCE_SHEET), CONFIG.SOURCE_SHEET, true);
   add('ประวัติลูกค้า', !!ss.getSheetByName(CONFIG.HISTORY_SHEET), CONFIG.HISTORY_SHEET, true);
@@ -316,6 +320,90 @@ function setBotSwitch_(body) {
     key: key,
     enabled: enabled,
     message: (enabled ? 'เปิด' : 'ปิด') + label + 'แล้ว'
+  };
+}
+
+
+function customerConversationPauseKey_(lineUserId) {
+  const raw = String(lineUserId || '').trim();
+  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, raw);
+  return 'customer-chat-pause:' + Utilities.base64EncodeWebSafe(digest).slice(0, 40);
+}
+
+function getCustomerConversationPause_(body) {
+  const lineUserId = String(body.lineUserId || '').trim();
+  if (!lineUserId) return { ok: true, paused: false };
+
+  const raw = PropertiesService.getScriptProperties().getProperty(customerConversationPauseKey_(lineUserId));
+  if (!raw) return { ok: true, paused: false };
+
+  try {
+    const state = JSON.parse(raw);
+    return {
+      ok: true,
+      paused: state && state.paused === true,
+      pausedAt: state && state.pausedAt ? state.pausedAt : '',
+      pausedBy: state && state.pausedBy ? state.pausedBy : ''
+    };
+  } catch (err) {
+    return { ok: true, paused: false };
+  }
+}
+
+function setCustomerConversationPause_(body) {
+  const requesterLineUserId = String(body.lineUserId || '').trim();
+  const targetLineUserId = String(body.targetLineUserId || requesterLineUserId).trim();
+  const paused = body.paused === true;
+
+  if (!requesterLineUserId || !targetLineUserId) {
+    return { ok: true, changed: false, message: 'ไม่พบ LINE User ID' };
+  }
+
+  let actorName = '';
+  let actorRole = '';
+
+  if (paused && requesterLineUserId === targetLineUserId) {
+    const self = getCustomerSelf_({ lineUserId: targetLineUserId, field: 'status' });
+    if (!self || !self.bound || self.suspended) {
+      return { ok: true, changed: false, message: 'ยังไม่พบลูกค้าที่ผูกบัญชีและใช้งานอยู่' };
+    }
+    actorName = (self.items && self.items[0] && self.items[0].name) || 'ลูกค้า';
+    actorRole = 'ลูกค้า';
+  } else {
+    const access = checkAccess_({
+      lineUserId: requesterLineUserId,
+      permission: 'ดูข้อมูลลูกค้า'
+    });
+    if (!access.allowed) {
+      return { ok: true, changed: false, message: access.message || 'ไม่มีสิทธิ์จัดการการสนทนาลูกค้า' };
+    }
+    actorName = access.staffName || '';
+    actorRole = access.role || '';
+  }
+
+  const props = PropertiesService.getScriptProperties();
+  const key = customerConversationPauseKey_(targetLineUserId);
+
+  if (paused) {
+    props.setProperty(key, JSON.stringify({
+      paused: true,
+      pausedAt: new Date().toISOString(),
+      pausedBy: actorName || actorRole || requesterLineUserId
+    }));
+  } else {
+    props.deleteProperty(key);
+  }
+
+  return {
+    ok: true,
+    changed: true,
+    paused: paused,
+    targetLineUserId: targetLineUserId,
+    actorName: actorName,
+    actorRole: actorRole,
+    message: paused
+      ? 'พักการตอบอัตโนมัติของลูกค้ารายนี้แล้ว'
+      : 'เปิดการตอบอัตโนมัติของลูกค้ารายนี้แล้ว'
   };
 }
 
