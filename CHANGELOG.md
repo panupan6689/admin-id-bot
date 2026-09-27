@@ -1,4 +1,5 @@
 ## 2026-09-27 — Payment source write + rollback
+- Renamed the approved-payment rollback UX from `ย้อนคิว <เลข>` / “ย้อนรายการ” to `ยกเลิกรายการ <เลข>` / “ยกเลิก / ทำรายการใหม่”.
 
 - Restricted receive-payment lookup to `V6/10-69` and `v3/10-69`.
 - Approved payment now writes the actual paid amount into the calendar date, clears the old scheduled due cell, advances the due date by 10 days, and schedules the next fee while leaving principal/fee unchanged.
