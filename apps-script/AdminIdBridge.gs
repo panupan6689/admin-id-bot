@@ -4485,13 +4485,35 @@ function queueFinancialReview_(body, type) {
   const query = String(body.query || '').trim();
   if (!query) return { ok: true, queued: false, message: 'กรุณาระบุคำค้นลูกค้า' };
 
-  const matches = searchCustomer_(query, true);
-  if (!matches.length) return { ok: true, queued: false, message: 'ไม่พบข้อมูลลูกค้า' };
-  if (matches.length > 1) {
-    return { ok: true, queued: false, needsSelection: true, matches: matches.slice(0, 10) };
-  }
+  let customer = null;
+  if (type === 'บันทึกชำระ' && body.exactCustomer) {
+    const exact = body.exactCustomer || {};
+    const exactSource = String(exact.source || '').trim();
+    const exactSheet = String(exact.sheet || '').trim();
+    const exactQueue = String(exact.queue || '').trim();
 
-  const customer = matches[0];
+    if (!paymentTabAllowed_(exactSource, exactSheet)) {
+      return { ok: true, queued: false, message: 'รับชำระได้เฉพาะ V6/10-69 และ v3/10-69' };
+    }
+
+    customer = findCustomerIdentity_(exactSource, exactSheet, exactQueue);
+    if (!customer) {
+      return { ok: true, queued: false, message: 'ไม่พบลูกค้าในแถบรับชำระที่อนุญาต' };
+    }
+    if (Number(exact.row || 0) > 0 && Number(customer.row || 0) !== Number(exact.row || 0)) {
+      return { ok: true, queued: false, message: 'แถวลูกค้าเปลี่ยนแล้ว กรุณาค้นหาใหม่' };
+    }
+    if (exact.name && normalizeGeneral_(customer.name) !== normalizeGeneral_(exact.name)) {
+      return { ok: true, queued: false, message: 'ชื่อลูกค้าเปลี่ยนแล้ว กรุณาค้นหาใหม่' };
+    }
+  } else {
+    const matches = searchCustomer_(query, true);
+    if (!matches.length) return { ok: true, queued: false, message: 'ไม่พบข้อมูลลูกค้า' };
+    if (matches.length > 1) {
+      return { ok: true, queued: false, needsSelection: true, matches: matches.slice(0, 10) };
+    }
+    customer = matches[0];
+  }
   let recentSlip = null;
   if (type === 'ตรวจสลิป') {
     recentSlip = getRecentSlipMessage_(body.lineUserId);
