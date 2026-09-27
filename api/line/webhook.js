@@ -2298,6 +2298,22 @@ export default async function handler(req, res) {
       try { return await serveSlipImage(req, res); }
       catch { return res.status(502).json({ ok: false }); }
     }
+    if (req.query?.bridge === "version") {
+      try {
+        const bridge = await callSheetsBridge({ action: "getBridgeVersion" });
+        return res.status(200).json({
+          ok: true,
+          service: "Admin ID LINE Webhook",
+          bridgeVersion: bridge?.version || null,
+        });
+      } catch {
+        return res.status(502).json({
+          ok: false,
+          service: "Admin ID LINE Webhook",
+          bridgeVersion: null,
+        });
+      }
+    }
     return res.status(200).json({
       ok: true,
       service: "Admin ID LINE Webhook",
