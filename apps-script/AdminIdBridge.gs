@@ -1,5 +1,5 @@
 const CONFIG = {
-  VERSION: '2026.09.27-114',
+  VERSION: '2026.09.27-115',
   CUSTOMER_PILOT_SOURCE: 'v6',
   CUSTOMER_PILOT_SHEET: 'V6/10-69',
   CUSTOMER_BINDING_TARGETS: [
@@ -197,7 +197,7 @@ function postDeploySelfTest_() {
     });
   }
 
-  add('version', CONFIG.VERSION === '2026.09.27-114', CONFIG.VERSION, true);
+  add('version', CONFIG.VERSION === '2026.09.27-115', CONFIG.VERSION, true);
   add('เจ้าหน้าที่', !!ss.getSheetByName(CONFIG.STAFF_SHEET), CONFIG.STAFF_SHEET, true);
   add('ลิ้งชีต', !!ss.getSheetByName(CONFIG.SOURCE_SHEET), CONFIG.SOURCE_SHEET, true);
   add('ประวัติลูกค้า', !!ss.getSheetByName(CONFIG.HISTORY_SHEET), CONFIG.HISTORY_SHEET, true);
@@ -427,7 +427,7 @@ function readinessCheck_(body) {
     checks.push({ name: name, pass: !!pass, detail: detail || '' });
   }
 
-  add('Apps Script version', CONFIG.VERSION === '2026.09.27-114', CONFIG.VERSION);
+  add('Apps Script version', CONFIG.VERSION === '2026.09.27-115', CONFIG.VERSION);
   add('BOT_MASTER_ENABLED', isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)), String(getSettingValue_('BOT_MASTER_ENABLED', true)));
   add('BOT_STAFF_ENABLED', isTrue_(getSettingValue_('BOT_STAFF_ENABLED', true)), String(getSettingValue_('BOT_STAFF_ENABLED', true)));
 
@@ -3781,8 +3781,20 @@ function applyApprovedPaymentToSource_(reviewRow, rawReviewRow, reviewRowNo) {
   }
   if (!(amount > 0)) return { ok: false, message: 'ยอดชำระไม่ถูกต้อง' };
   if (!(fee > 0)) return { ok: false, message: 'ค่าเช่าในต้นทางไม่ถูกต้อง' };
+  if (Math.abs(amount - fee) > 0.005) {
+    return {
+      ok: false,
+      message: 'ยอดชำระ ' + amount + ' ไม่เท่าค่าเช่า ' + fee + ' จึงยังไม่เลื่อนรอบอัตโนมัติ'
+    };
+  }
 
   const nextDue = addDays_(oldDue, 10);
+  if (paidAt.getTime() >= nextDue.getTime()) {
+    return {
+      ok: false,
+      message: 'รายการนี้เลยรอบถัดไปแล้ว จึงยังไม่เลื่อนวันจ่ายอัตโนมัติ กรุณาตรวจสอบรอบชำระก่อน'
+    };
+  }
   const calendarStartCol = headers.note ? headers.note + 1 : Math.max(headers.dueDate + 1, 15);
   const paidCol = findCalendarDateColumn_(sheet, headers.headerRow, calendarStartCol, paidAt);
   const oldDueCol = findCalendarDateColumn_(sheet, headers.headerRow, calendarStartCol, oldDue);
