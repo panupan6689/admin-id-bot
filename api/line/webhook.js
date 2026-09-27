@@ -1656,7 +1656,33 @@ async function handleEvent(event) {
       if (command.activityToday) payload.activityToday = true;
       if (command.switchKey) payload.switchKey = command.switchKey;
 
-      const result = await callSheetsBridge(payload);
+      let result = await callSheetsBridge(payload);
+
+      // If a bare queue lookup returns multiple fuzzy matches, prefer one exact queue match.
+      // This prevents queue 310-4 from being confused with a phone number containing 3104.
+      if (
+        command.action === "queuePayment" &&
+        result?.needsSelection &&
+        Array.isArray(result.matches) &&
+        command.query
+      ) {
+        const targetQueue = String(command.query || "").trim().toLowerCase().replace(/\s+/g, "");
+        const exactQueueMatches = result.matches.filter((m) =>
+          String(m?.queue || "").trim().toLowerCase().replace(/\s+/g, "") === targetQueue
+        );
+        if (exactQueueMatches.length === 1) {
+          const exact = exactQueueMatches[0];
+          const qualifiedQuery = exact.source && exact.queue
+            ? String(exact.source).trim() + ":" + String(exact.queue).trim()
+            : "";
+          if (qualifiedQuery) {
+            result = await callSheetsBridge({
+              ...payload,
+              query: qualifiedQuery,
+            });
+          }
+        }
+      }
 
       let responseText = "";
       if (command.action === "getRecentIdentityImages") {
