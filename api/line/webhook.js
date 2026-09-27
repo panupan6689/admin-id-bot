@@ -640,6 +640,27 @@ async function handleEvent(event) {
 
   if (event.type !== "message") return;
 
+  if (event.source?.type === "user" && event.source?.userId) {
+    const incomingText = event.message?.type === "text"
+      ? String(event.message.text || "").trim()
+      : "";
+    const isResumeCommand = /^เปิดบอตลูกค้า\s+\S+$/.test(incomingText);
+    if (!isResumeCommand) {
+      try {
+        const pauseState = await callSheetsBridge({
+          action: "getCustomerConversationPause",
+          lineUserId: event.source.userId,
+        });
+        if (pauseState?.paused) {
+          // Human takeover: keep the webhook silent for this customer until staff resumes the bot.
+          return;
+        }
+      } catch (error) {
+        console.warn("Customer pause lookup failed", error);
+      }
+    }
+  }
+
   if (event.message?.type === "image") {
     const lineUserId = event.source?.userId || "";
     const sourceType = event.source?.type || "";
@@ -733,6 +754,36 @@ async function handleEvent(event) {
     const lineUserId = event.source?.userId || "";
     const sourceType = event.source?.type || "";
     const groupId = event.source?.groupId || "";
+
+    const resumeCustomerMatch = text.match(/^เปิดบอตลูกค้า\s+(\S+)$/);
+    if (sourceType === "user" && lineUserId && resumeCustomerMatch) {
+      const targetLineUserId = resumeCustomerMatch[1];
+      const resumed = await callSheetsBridge({
+        action: "setCustomerConversationPause",
+        lineUserId,
+        targetLineUserId,
+        paused: false,
+      });
+      await replyMessage(event.replyToken, [{
+        type: "text",
+        text: resumed?.changed
+          ? "จบการคุยแล้ว เปิดบอตให้ลูกค้ารายนี้เรียบร้อย"
+          : (resumed?.message || "ยังเปิดบอตให้ลูกค้ารายนี้ไม่ได้")
+      }]);
+      await safeLogAction({
+        lineUserId,
+        staffName: resumed?.actorName || "",
+        role: resumed?.actorRole || "",
+        command: "เปิดบอตลูกค้า",
+        query: targetLineUserId,
+        source: "LINE ส่วนตัว",
+        result: resumed?.changed ? "เปิดตอบอัตโนมัติ" : "ไม่สำเร็จ",
+        actionName: "customerHumanTakeoverResume",
+        status: resumed?.changed ? "สำเร็จ" : "ไม่สำเร็จ",
+        note: resumed?.message || "",
+      });
+      return;
+    }
 
     if (sourceType === "user" && lineUserId && (text === "เข้าเว็บ" || text === "เปิดเว็บ")) {
       const webAccess = await callSheetsBridge({
@@ -886,6 +937,18 @@ async function handleEvent(event) {
           return;
         }
         const c = result.customer || {};
+        let pauseResult = null;
+        try {
+          pauseResult = await callSheetsBridge({
+            action: "setCustomerConversationPause",
+            lineUserId,
+            targetLineUserId: lineUserId,
+            paused: true,
+          });
+        } catch (error) {
+          console.warn("Could not pause customer bot for human takeover", error);
+        }
+        const pausedForHuman = !!pauseResult?.changed && pauseResult?.paused === true;
         const alertText = [
           "ลูกค้าต้องการติดต่อแอดมิน",
           "ชื่อ: " + (c.name || "-"),
@@ -893,9 +956,26 @@ async function handleEvent(event) {
           "ชีต: " + [c.source, c.sheet].filter(Boolean).join(" / "),
           "LINE User ID: " + (c.lineUserId || lineUserId),
           "เวลา: " + new Intl.DateTimeFormat("th-TH", { timeZone: "Asia/Bangkok", dateStyle: "short", timeStyle: "short" }).format(new Date()),
+          pausedForHuman ? "สถานะ: พักบอตแล้ว / แอดมินรับช่วง" : "สถานะ: ยังพักบอตไม่สำเร็จ",
         ].join("\n");
+        const adminAlertMessage = {
+          type: "text",
+          text: alertText,
+          ...(pausedForHuman ? {
+            quickReply: {
+              items: [{
+                type: "action",
+                action: {
+                  type: "message",
+                  label: "จบการคุย / เปิดบอต",
+                  text: "เปิดบอตลูกค้า " + lineUserId,
+                }
+              }]
+            }
+          } : {})
+        };
         const outcomes = await Promise.allSettled(
-          (result.recipients || []).map((id) => pushMessage(id, [{ type: "text", text: alertText }]))
+          (result.recipients || []).map((id) => pushMessage(id, [adminAlertMessage]))
         );
         const delivered = outcomes.filter((x) => x.status === "fulfilled").length;
         await safeLogAction({
@@ -907,7 +987,9 @@ async function handleEvent(event) {
         await replyMessage(event.replyToken, [{
           type: "text",
           text: delivered
-            ? "ส่งแจ้งแอดมินแล้วครับ กรุณารอสักครู่"
+            ? (pausedForHuman
+                ? "ส่งแจ้งแอดมินแล้วครับ\nแอดมินกำลังรับช่วงการสนทนา บอตจะหยุดตอบชั่วคราวจนกว่าแอดมินจะเปิดกลับ"
+                : "ส่งแจ้งแอดมินแล้วครับ กรุณารอสักครู่")
             : "ยังส่งแจ้งแอดมินไม่สำเร็จ กรุณาลองอีกครั้ง"
         }]);
         await safeLinkCustomerMenu(lineUserId);
