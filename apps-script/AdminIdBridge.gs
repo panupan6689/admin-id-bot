@@ -241,7 +241,7 @@ function postDeploySelfTest_() {
   add('BOT_MASTER_ENABLED', master, String(master), true);
   add('BOT_STAFF_ENABLED', staffEnabled, String(staffEnabled), true);
   add('BOT_CUSTOMER_ENABLED', isTrue_(getSettingValue_('BOT_CUSTOMER_ENABLED', true)), String(getSettingValue_('BOT_CUSTOMER_ENABLED', true)), true);
-  add('Safety เขียนต้นทางปิด', writesEnabled === false, writesEnabled ? 'เปิด' : 'ปิด', true);
+  add('รับชำระเขียนต้นทาง', writesEnabled === true, writesEnabled ? 'เปิด' : 'ปิด', true);
   add('แจ้งเตือนลูกค้า', reminderInternal === false, reminderInternal ? 'ยังเป็นภายในเท่านั้น' : 'เปิดส่งลูกค้า', false);
   add('OK Slip', okSlip, okSlip ? 'เชื่อมแล้ว' : 'ยังไม่เชื่อม', false);
 
@@ -254,7 +254,7 @@ function postDeploySelfTest_() {
     warnings.push('Web App ไม่มีสิทธิ์ตรวจ trigger อัตโนมัติ ให้เช็ก trigger ใน Apps Script UI');
   }
   if (!okSlip) warnings.push('OK Slip ยังไม่เชื่อม จึงยังไม่ตรวจสลิปกับ API ภายนอก');
-  if (writesEnabled) warnings.push('FINANCIAL_SOURCE_WRITES_ENABLED เปิดอยู่');
+  if (!writesEnabled) warnings.push('FINANCIAL_SOURCE_WRITES_ENABLED ยังปิดอยู่');
 
   const critical = checks.filter(function(x){ return x.critical; });
   const criticalPassed = critical.filter(function(x){ return x.pass; }).length;
@@ -467,7 +467,7 @@ function readinessCheck_(body) {
   }
 
   const writesEnabled = isTrue_(getSettingValue_('FINANCIAL_SOURCE_WRITES_ENABLED', false));
-  add('Safety: เขียนต้นทางปิด', writesEnabled === false, writesEnabled ? 'เปิดอยู่' : 'ปิดอยู่');
+  add('รับชำระเขียนต้นทาง', writesEnabled === true, writesEnabled ? 'เปิดอยู่' : 'ปิดอยู่');
 
   const okSlipEnabled = isTrue_(getSettingValue_('OKSLIP_ENABLED', false));
   add('OK Slip', true, okSlipEnabled ? 'เชื่อมแล้ว' : 'ยังไม่เชื่อม (ไม่บังคับ)');
