@@ -1,5 +1,6 @@
 export const maxDuration = 60;
 import crypto from "node:crypto";
+import { notifyCustomerSlip, serveSlipImage } from "../../lib/customerSlipAlerts.js";
 import { syncStaffPaymentMenu } from "../../lib/staffRichMenu.js";
 import { callSheetsBridge, formatCustomerMatches } from "../../lib/sheetsBridge.js";
 import { parseCommand, formatCustomerInfo, formatHistory } from "../../lib/commands.js";
@@ -646,6 +647,13 @@ async function handleEvent(event) {
     if (!lineUserId) return;
 
     try {
+      const alert = await notifyCustomerSlip(event);
+      if (alert.handled) {
+        await replyMessage(event.replyToken, [{ type: "text", text: alert.sent
+          ? "ได้รับรูปแล้ว แจ้งแอดมิน/เจ้าของให้ตรวจสอบแล้วครับ\nยังไม่ยืนยันยอดชำระจนกว่าจะตรวจสอบเรียบร้อย"
+          : "ได้รับรูปแล้ว แต่ยังแจ้งผู้ตรวจสอบไม่สำเร็จ กรุณาติดต่อแอดมินครับ" }]);
+        return;
+      }
       const [identityResult, slipResult] = await Promise.all([
         callSheetsBridge({
           action: "rememberRecentImage",
@@ -1310,7 +1318,7 @@ async function handleEvent(event) {
       if (command.action === "queuePayment" && (!command.query || !Number.isFinite(command.amount) || command.amount <= 0)) {
         await replyMessage(event.replyToken, [{
           type: "text",
-          text: "รับชำระ\nพิมพ์: " + command.prefix + " <เลขคิว> <ยอดชำระจริง>\nตัวอย่าง: " + command.prefix + " v6:101 500\nยอดต้องมากกว่า 0 บาท หากคิวซ้ำให้ระบุแหล่ง:คิว\nรายการจะเข้าคิวตรวจสอบก่อน ยังไม่แก้ยอดในชีตต้นทาง",
+          text: "รับชำระ\nพิมพ์: " + command.prefix + " <เลขคิว> <ยอดชำระจริง>\nตัวอย่าง: " + command.prefix + " " + (command.query || "v6:101") + " 500\nยอดต้องมากกว่า 0 บาท หากคิวซ้ำให้ระบุแหล่ง:คิว\nรายการจะเข้าคิวตรวจสอบก่อน ยังไม่แก้ยอดในชีตต้นทาง",
         }]);
         return;
       }
@@ -1902,6 +1910,10 @@ async function handleEvent(event) {
 
 export default async function handler(req, res) {
   if (req.method === "GET") {
+    if (req.query?.slip) {
+      try { return await serveSlipImage(req, res); }
+      catch { return res.status(502).json({ ok: false }); }
+    }
     return res.status(200).json({
       ok: true,
       service: "Admin ID LINE Webhook",
