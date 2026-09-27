@@ -1,6 +1,6 @@
 export const maxDuration = 60;
 import crypto from "node:crypto";
-import { notifyCustomerSlip, serveSlipImage, slipImageToken } from "../../lib/customerSlipAlerts.js";
+import { notifyCustomerSlip, serveSlipImage, slipImageToken, verifyResendSlipToken } from "../../lib/customerSlipAlerts.js";
 import { syncStaffPaymentMenu } from "../../lib/staffRichMenu.js";
 import { callSheetsBridge, formatCustomerMatches } from "../../lib/sheetsBridge.js";
 import { parseCommand, formatCustomerInfo, formatHistory } from "../../lib/commands.js";
@@ -743,7 +743,64 @@ async function broadcastStaffSubmittedSlip(event) {
   return { handled:true, sent, failed };
 }
 
+async function handleSlipResendPostback(event) {
+  if (event.type !== "postback" || event.source?.type !== "user") return false;
+  const data = String(event.postback?.data || "");
+  if (!data.startsWith("resendSlip=")) return false;
+
+  const requesterLineUserId = String(event.source?.userId || "").trim();
+  const token = decodeURIComponent(data.slice("resendSlip=".length));
+  const payload = verifyResendSlipToken(token);
+  if (!payload) {
+    await replyMessage(event.replyToken, [{ type:"text", text:"ลิงก์ส่งซ้ำหมดอายุหรือไม่ถูกต้อง" }]);
+    return true;
+  }
+
+  const access = await callSheetsBridge({
+    action:"checkAccess",
+    lineUserId:requesterLineUserId,
+    sourceType:"user",
+    permission:"ดูข้อมูลลูกค้า",
+  });
+  const allowedRoles = new Set(["เจ้าของ","แอดมิน","admin","Admin","เจ้าหน้าที่","พนักงาน","staff","Staff"]);
+  if (!access?.allowed || !allowedRoles.has(access.role)) {
+    await replyMessage(event.replyToken, [{ type:"text", text:"บัญชีนี้ไม่มีสิทธิ์ส่งสลิปซ้ำ" }]);
+    return true;
+  }
+
+  const synthetic = {
+    source:{ type:"user", userId:payload.customerLineUserId },
+    message:{ type:"image", id:payload.messageId },
+    timestamp:Date.now(),
+    _retrySalt:"manual-resend:" + String(event.postback?.params?.datetime || event.replyToken || requesterLineUserId),
+  };
+
+  const result = await notifyCustomerSlip(synthetic);
+  await safeLogAction({
+    lineUserId:requesterLineUserId,
+    staffName:access.staffName || "",
+    role:access.role || "",
+    command:"ส่งสลิปซ้ำ",
+    query:"",
+    source:"LINE ส่วนตัว",
+    result:result?.handled ? ("ส่งซ้ำสำเร็จ " + (result.sent || 0) + " คน") : "ส่งซ้ำไม่สำเร็จ",
+    actionName:"customerSlipResend",
+    status:result?.handled && result.sent ? "สำเร็จ" : "ไม่สำเร็จ",
+    note:"ส่งจากปุ่มสลิปเดิม",
+  });
+
+  await replyMessage(event.replyToken, [{
+    type:"text",
+    text: result?.handled && result.sent
+      ? "ส่งสลิปซ้ำให้ทีมแล้ว " + result.sent + " คน"
+      : "ยังส่งสลิปซ้ำไม่ได้ รูปอาจหมดอายุหรือข้อมูลลูกค้าไม่พร้อม"
+  }]);
+  return true;
+}
+
 async function handleEvent(event) {
+  if (await handleSlipResendPostback(event)) return;
+
   if (event.type === "follow") {
     await replyMessage(event.replyToken, [{
       type: "text",
