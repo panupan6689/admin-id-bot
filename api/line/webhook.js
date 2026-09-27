@@ -1699,6 +1699,13 @@ async function handleEvent(event) {
               ...payload,
               query: String(exact.source).trim() + ":" + identity,
             });
+            if (result?.needsSelection) {
+              result = {
+                ok: true,
+                queued: false,
+                message: "พบคิวในแถบที่อนุญาตแล้ว แต่ข้อมูลซ้ำกับชีตเก่า จึงยังไม่ส่งเข้าคิวเพื่อป้องกันเลือกลูกค้าผิด",
+              };
+            }
           }
         }
       } else {
