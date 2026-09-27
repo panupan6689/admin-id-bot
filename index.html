@@ -291,14 +291,20 @@
     });
   }
   function loadSummary(){
-    fetch("/api/web/summary",{headers:authHeaders(),cache:"no-store"}).then(function(r){
-      return r.json();
-    }).then(function(j){
-      if(!j||!j.ok||!j.summary)return;
-      byId("todayCount").textContent=j.summary.today!=null?j.summary.today:"—";
-      byId("upcomingCount").textContent=j.summary.upcoming!=null?j.summary.upcoming:"—";
-      byId("overdueCount").textContent=j.summary.overdue!=null?j.summary.overdue:"—";
-    }).catch(function(){});
+    var modes=[
+      {mode:"today",id:"todayCount"},
+      {mode:"upcoming",id:"upcomingCount"},
+      {mode:"overdue",id:"overdueCount"}
+    ];
+    modes.forEach(function(x){
+      fetch("/api/web/summary?mode="+encodeURIComponent(x.mode),{headers:authHeaders(),cache:"no-store"})
+        .then(function(r){return r.json();})
+        .then(function(j){
+          if(!j||!j.ok)return;
+          var items=Array.isArray(j.items)?j.items:[];
+          byId(x.id).textContent=items.length;
+        }).catch(function(){});
+    });
   }
 
   function sendNotification(one){
