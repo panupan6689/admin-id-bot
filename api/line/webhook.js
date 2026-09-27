@@ -815,7 +815,7 @@ async function handleEvent(event) {
 
   if (event.type !== "message") return;
 
-  if (event.source?.type === "user" && event.source?.userId) {
+  if (process.env.CUSTOMER_TAKEOVER_PAUSE_ENABLED === "true" && event.source?.type === "user" && event.source?.userId) {
     const incomingText = event.message?.type === "text"
       ? String(event.message.text || "").trim()
       : "";
@@ -826,10 +826,7 @@ async function handleEvent(event) {
           action: "getCustomerConversationPause",
           lineUserId: event.source.userId,
         });
-        if (pauseState?.paused) {
-          // Human takeover: keep the webhook silent for this customer until staff resumes the bot.
-          return;
-        }
+        if (pauseState?.paused) return;
       } catch (error) {
         console.warn("Customer pause lookup failed", error);
       }
@@ -1010,42 +1007,24 @@ async function handleEvent(event) {
 
     let command = parseCommand(text);
 
-    // Distinguish staff from customers before interpreting a bare "queue amount" message.
-    // This prevents staff payment input such as "310-4 1200" from being treated as a customer binding attempt.
-    let staffSelfAccess = null;
-    if (sourceType === "user" && lineUserId) {
-      try {
-        staffSelfAccess = await callSheetsBridge({
-          action: "checkAccess",
-          lineUserId,
-          sourceType,
-          groupId,
-          permission: "ดูข้อมูลลูกค้า",
-        });
-      } catch (error) {
-        console.warn("Staff pre-check failed", error);
-      }
-
-      if (staffSelfAccess?.allowed && !command) {
-        const barePayment = text.match(/^(\S+)\s+([0-9,]+(?:\.\d{1,2})?)$/);
-        if (barePayment) {
-          // Convert immediately; the normal command access gate below will enforce
-          // the "บันทึกชำระ" permission exactly once.
-          command = {
-            prefix: "รับชำระ",
-            action: "queuePayment",
-            permission: "บันทึกชำระ",
-            privateOnly: true,
-            query: barePayment[1],
-            amount: Number(barePayment[2].replace(/,/g, "")),
-          };
-        }
+    // A bare "queue amount" message is unambiguous payment input.
+    // Convert it before customer binding so "310-4 1200" can never become a name-binding attempt.
+    if (!command && sourceType === "user" && lineUserId) {
+      const barePayment = text.match(/^(\S+)\s+([0-9,]+(?:\.\d{1,2})?)$/);
+      if (barePayment) {
+        command = {
+          prefix: "รับชำระ",
+          action: "queuePayment",
+          permission: "บันทึกชำระ",
+          privateOnly: true,
+          query: barePayment[1],
+          amount: Number(barePayment[2].replace(/,/g, "")),
+        };
       }
     }
 
-    // Customer self-service is public in 1:1 chat during the V6/10-69 pilot,
-    // but staff accounts must never be routed into customer binding/self-service.
-    if (sourceType === "user" && lineUserId && !staffSelfAccess?.allowed) {
+    // Customer self-service must not consume text that has already been recognized as a staff command.
+    if (sourceType === "user" && lineUserId && !command) {
       const customerField = customerFieldForText(text);
 
       const explicitBindingMatch = text.match(/^ผูกบัญชี\s+(\S+)\s+(.+\S)$/);
