@@ -22,6 +22,22 @@ export default async function handler(req, res) {
     if (!session) return res.status(401).json({ ok: false, error: "กรุณาเข้าเว็บผ่าน LINE OA ใหม่" });
 
     const body = typeof req.body === "object" && req.body ? req.body : {};
+
+    if (String(body.action || "").trim() === "record_payment") {
+      const customerQuery = String(body.queue || "").trim();
+      const amount = Number(body.amount);
+      if (!customerQuery || !Number.isFinite(amount) || amount <= 0) {
+        return res.status(400).json({ ok: false, error: "กรุณาระบุคิวและยอดชำระให้ถูกต้อง" });
+      }
+      const result = await callSheetsBridge({ action: "queuePayment", lineUserId: session.sub, query: customerQuery, amount });
+      if (result?.needsSelection) {
+        return res.status(409).json({ ok: false, needsSelection: true, matches: Array.isArray(result.matches) ? result.matches : [], error: "พบลูกค้าหลายรายการ กรุณาระบุคิวให้ชัดเจน" });
+      }
+      if (result?.queued === false) {
+        return res.status(400).json({ ok: false, duplicate: !!result.duplicate, duplicateRowNo: result.duplicateRowNo || null, error: result.message || "ยังส่งเข้าคิวตรวจสอบไม่ได้" });
+      }
+      return res.status(200).json({ ok: true, queued: true, rowNo: result?.rowNo || null, customer: result?.customer || null, amount, message: result?.message || "ส่งเข้าคิวตรวจสอบแล้ว" });
+    }
     const field = String(body.field || "").trim();
     const queue = String(body.queue || "").trim();
     const queues = Array.isArray(body.queues) ? body.queues.map(String).join(",") : String(body.queues || "").trim();
